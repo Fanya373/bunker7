@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Бункер — онлайн</title>
+<style>
+:root{--bg:#f3f0e8;--sf:#fff;--tx:#201e19;--mu:#6d685d;--ac:#b4501a;--bd:#ddd6c6;--ok:#2e7b4d;--bad:#b3261e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#14130f;--sf:#1f1d18;--tx:#ece7da;--mu:#9b9587;--ac:#e68d4d;--bd:#39352b;--ok:#6fc08b;--bad:#f0877f;color-scheme:dark}}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:26px;margin:4px 0 2px}
+h2{font-size:18px;margin:18px 0 8px}
+.mu{color:var(--mu)}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin:10px 0}
+.card.me{border-color:var(--ac)}
+.card.out{opacity:.65}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.badge{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--bd);color:var(--mu)}
+.badge.bad{color:var(--bad);border-color:var(--bad)}
+.badge.ok{color:var(--ok);border-color:var(--ok)}
+.tr{display:flex;gap:10px;align-items:center;padding:4px 0;border-top:1px dashed var(--bd);flex-wrap:wrap}
+.tr:first-of-type{border-top:0}
+.k{flex:0 0 112px;color:var(--mu);font-size:14px}
+.v{flex:1;min-width:120px}
+.hid{color:var(--mu);font-style:italic}
+button,input,select{font:inherit;border-radius:8px;border:1px solid var(--bd);padding:8px 12px;background:var(--sf);color:var(--tx)}
+button{cursor:pointer;background:var(--ac);color:#fff;border-color:var(--ac)}
+button.sm{padding:3px 10px;font-size:14px}
+button.alt{background:transparent;color:var(--ac)}
+button.on{background:var(--bad);border-color:var(--bad)}
+input{width:100%}
+select{max-width:100%}
+#err{color:var(--bad);margin:8px 0}
+.info{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.code{font-size:30px;letter-spacing:4px;font-weight:700}
+.link{word-break:break-all;user-select:all;font-size:14px}
+ul{padding-left:20px;margin:6px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>☢️ Бункер</h1>
+<div class="mu">Онлайн-игра на выживание: без регистрации, прямо в браузере</div>
+<div id="err"></div>
+<div id="start" class="card">
+  <b>Ваше имя</b>
+  <div class="row" style="margin-top:6px"><input id="nm" maxlength="24" placeholder="Имя"></div>
+  <div class="row"><button type="button" id="mk">Создать комнату</button></div>
+  <p class="mu">или войдите в чужую комнату по коду:</p>
+  <div class="row" style="margin-top:0"><input id="cd" maxlength="5" placeholder="Код комнаты" style="flex:1;text-transform:uppercase"><button type="button" id="jn">Войти</button></div>
+</div>
+<div id="main"></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+const TR={prof:"Профессия",race:"Раса",age:"Пол, возраст, дети",orient:"Ориентация",trait:"Человеческая черта",build:"Телосложение и рост",health:"Здоровье",hobby:"Хобби",phobia:"Фобия",pack:"Рюкзак (мелочи)",big:"Крупный инвентарь",fact:"Факт"};
+const KEYS=Object.keys(TR);
+const D={
+prof:["Хирург","Повар","Электрик","Учитель","Инженер-строитель","Фермер","Программист","Психолог","Слесарь","Биолог","Полицейский","Музыкант","Врач-терапевт","Юрист","Водитель-дальнобойщик"],
+health:["Полностью здоров","Астма","Диабет 1 типа","Отличная физическая форма","Плохое зрение","Хроническая бессонница","Аллергия на пыль","Больная спина","Железное здоровье","Слабое сердце"],
+hobby:["Садоводство","Рыбалка","Шахматы","Выпечка","Радиолюбительство","Туризм","Игра на гитаре","Шитьё","Столярное дело","Рисование","Альпинизм"],
+phobia:["Боязнь замкнутых пространств","Боязнь темноты","Боязнь крови","Боязнь насекомых","Боязнь высоты","Боязнь толпы","Нет фобий","Боязнь воды","Боязнь микробов"],
+pack:["Аптечка","Складной нож","Фонарик и батарейки","Рация","Пачка семян","Книга рецептов","Колода карт","Набор для шитья","Спички и зажигалки","Мини-компас","Блокнот и карандаши","Фляга с водой"],
+big:["Дизельный генератор","Ящик инструментов","Ящик консервов","Палатка на 6 человек","Гитара","Солнечная панель","Бочка с водой","Верстак","Мешки с зерном","Складной стол и стулья","Надувная лодка","Рулон ткани"],
+trait:["Добрый","Вспыльчивый","Прирождённый лидер","Трудолюбивый","Ленивый","Лжец","Честный","Трусливый","Храбрый","Оптимист","Пессимист","Скрытный","Жадный","Щедрый","Конфликтный","Весёлый","Спокойный","Ответственный"],
+fact:["Умеет делать лекарства из трав","Был в тюрьме","Знает три языка","Бывший военный","Лидер по натуре","Боится брать ответственность","Никогда не врёт","Умеет водить любую технику","Всю жизнь прожил в деревне"]
+};
+D.prof.push("Безработный","Тиктокер","Ночная бабочка","Порноактёр","Онлифанс-модель","Шлюха","Ютубер","Лайкер","Диванный критик","Оператор порно","Оператор с AWP на миде","Вор гифок");
+D.hobby.push("Дрочить","Нюхать пятки","Куколдить","Листать ТикТок","Играть в игры","Деградировать","Тупеть","Играть в Роблокс","Жертвоприношения","Хоббихорсинг","Квадробинг","Ссать в лифте","Срать в подъезде","Думать о хуйне");
+D.trait.push("МЕГА сексист","МЕГА расист","Деградация","Тупой","Верующий","МЕГА ДОЛБАЕБ");
+D.health.push("Облысение","Очень волосатый (как медведь)","Одноглазый","ВИЧ","СПИД","Стеклянные кости","Big Booty","Extra thick");
+D.phobia.push("Боязнь гениталий","Боязнь борща","Боязнь женщин","Боязнь мужчин","Боязнь существ","Боязнь пердежа","Боязнь отрыжки","Боязнь суицида","Боязнь фобий","Боязнь стариков","Боязнь детей");
+D.pack.push("Дилдо","Вибратор","Презервативы (запакованные)","Презервативы (использованные)","Виагра","Ведро из KFC","Шоколад с афродизиаком","Один носок","Одно очко","Кольцо","Клавиатура","Дезик","Спиннер","Наушники","Зонтик от дождя","Пляжный зонтик","Чья-то голая фотка из галереи","Резиновая вагина","Секс-кукла","Картонный Райан Гослинг","Орешки Big Bob","Телефон","Банан","Батон","Пачка сухариков","Амфетамин","Героин","Марихуана");
+D.big.push("Огромное дилдо","Склад сухариков","Монитор","Статуя Свободы в натуральную величину","Мама Нолана","Мама Габена","Луна","Звезда","Атомная бомба","Уран","Корова","Wi-Fi роутер","Грузовик картошки","Один помидор","Клон Жени");
+D.fact.push("Феминистка","Ненавидит женщин","Убил Тун-тун-тун-сахура","Подрочил сам на себя","Участвовал в голландском штурвале","Варил мет","Умеет делать порчу на понос");
+D.prof.push("Гунер","Гадалка","Инфоцыган","Философ (безработный)","Джонни Синс (12 в 1)","Сварщик","Военный","Мороженщик","Шаурмист","Официант","Игрок в Клэш Рояль","Космонавт","Нетраннер","Предприниматель");
+D.hobby.push("Работает в такси как хобби","Смотреть футбол","Заниматься садоводством","Делать лоботомию","Ритуалы над нежитью");
+D.trait.push("Лидер","Миролюб","Тихий","Неуравновешенный","Конченый извращенец","Безэмоциональный","Гиперактивный","Импульсивный","Переменчивое настроение","Гений","Умный как Альберт Эйнштейн");
+D.health.push("Рак мозга","Рак лёгких","Рак желудка","Рак кожи","Туберкулёз","Чума","Шизофрения","Раздвоение личности","Паника","Паранойя","Синдром Туретта","Синдром Дауна","Шестипалый","Паралич ниже пояса","Паралич ниже шеи","Гниение тела","Каменная болезнь","Кристальная болезнь","Полный иммунитет ко всему","Сломана рука","Сломана нога","Руки на месте ног и ноги на месте рук");
+D.pack.push("Огурец с большими яйцами","Футболка с Месси","Футболка с Роналду","Зеркало","Калькулятор","Кость","Череп","Череп деда","Тушка белки","Шоколадный заяц","Киндер-сюрприз","Палка (похожа на меч)","Пачка чипсов","2-литровая Кока-кола","2-литровая Пепси","Ящик пива","1 литр водки","Гантели","Зелье от бесплодия","Косметичка","Статуэтка кошки-девушки","Фотография: Субару спит с Эмилией в одной кровати в обнимку");
+D.big.push("Поезд с 12 вагонами","Самолёт","Вертолёт","Титаник","TON 618","Генератор из DBD","Половина использованного презерватива","Университет Каразина","Штанга 200 кг","Велосипед","Самокат","Скамейка","3D-принтер","Синий кит","Куб 1×1×1 м из вольфрама","Звёздная пыль","Манга яой","Манга юри","Манга One Piece","Манга Bleach","Манга Джоджо","Волшебная палочка","Верити","Фигурка персонажа","Катана","Сабля","Пистолет","Пістолет модернізірований","Автомат","Винтовка","АК-47","Дробовик","Бита","Нож");
+D.fact.push("Разыскивает Интерпол","Был в тюрьме 3 года","Ребёнок депутата","Алкоголик","Пьёт ртуть на завтрак","Пытался с братом нелегально перевезти труп родителя через границу","Сбежал из Северной Кореи","Считает себя императором мира","Некрофил","Нимфоман","Озабоченный","Прозрачный","Милфхантер","Прошёл тест на IQ и сказал, что получил 5","Купил жвачку за 1 гривну, продал за 2","Говорит, что лично знает Илона Маска (дальше комнаты не выходил)","Бабник","При деньгах","Построил себе дачу","Эмигрант","Закончил три университета","Имеет 2 высших образования","Назвал Кима свиньёй","Стал причиной развала СССР","Совершил военное преступление","Создал свою религию, где он бог");
+D.prof.push("Рыцарь","Калаглот");
+D.health.push("Киберпсихоз","Топографический кретинизм","Слепота","Глухота","Немота","Глухонемой","Мозговой гриб","Конечности разного размера");
+D.hobby.push("Наблюдать за людьми с жутким лицом");
+D.phobia.push("Боязнь космоса","Боязнь смотреть на половой акт","Боязнь лоботомии");
+D.trait.push("Забывчивый");
+D.pack.push("Флюгегенхаймен","Лампочка","Колба","Чашка","Стакан","Зарядка для телефона","Духи","Медицинская маска","Топор","Тарелка","Пердёж в пакетике","Лабубу","Грязные трусы","Ящик Пепси","Ящик Кока-колы","Трусы","Мёртвая шлюха","Тухлая айва","Дуриан","Арбуз","Козье молоко","Сюрстрёмминг","Крабовые палочки","Кот","Собака","Ребёнок","Воздушный шарик","Рыболовная сеть");
+D.big.push("Тунгусский метеорит","Юпитер","Красный карлик","Солнце","Астероид","Янтарь с хлебом внутри","100 литров смазки","Туалет","50 литров анализов","Бурдж-Халифа","Пирамида");
+D.fact.push("Колупался у себя в жопе","Был президентом туалета","Снимался в порно","Каннибал","Имеет ПТСР","Организовал гей-оргию");
+D.build=["Худой","Лёгкое ожирение","Среднее","Сильное","Тощий","Олимпиец","Качок","Босс KFC","Рама 2 на 2","Рама 2 на 2 на 2","Жилистый","Крепыш","Хрупкий","Шкаф","Пухлый","Дрищ-марафонец"];
+D.build.push("Несимметричный");
+const HM=["Импотент","Член как у Бибрика","Яйца как колокола","Рак яичек"],HF=["Огромные сиськи","Опухшая пизда"];
+const SP=[["Человек"],["Тун-тун-тун-сахур"],["Фурри"],["Существо",0,100,999999],["Орк"],["Гоблин"],["Эльф"],["Кентавр"],["Пивозавр"],["Единорог"],["Аниметянка",1],["Гитлер"],["Био-мусор"],["Живое дерево"],["Пришелец",0,100,9999],["Шрек"],["Гном"],["Дворф"],["Трансформер"],["Слизь"],["Каменный человек"],["Халк"],["Снежный человек"],["Демон"],["Скелет"],["Суккуб",1],["Исекайнутый персонаж"],["Драконорождённый"],["Ящеролюд"],["Зверолюд"],["Кобольд"],["Гаргулья"],["Ангел"],["Голубь-шпион"],["Секс-робот"],["Робот"],["Робот с ИИ"],["Кукла Барби",1],["Био-масса"],["Тралалело Тралала"],["Зомби"],["Мёртвая шлюха",1],["Возрождённая нежить"],["Кубический (как Стив)"],["Роблокс-персонаж"],["Вампир"],["Бог"],["Полубог"],["Длинорукий"],["Лилипут"]];
+const OS=["Гетеро","Бисексуал","Гей","Лесбиянка","Любит только себя","Асексуал","Фанат Джоджо","Фанатка яой"];
+function yw(n){const e=n%10,h=n%100;return h>10&&h<15?"лет":e===1?"год":e>1&&e<5?"года":"лет"}
+const DIS=["Ядерная война. Снаружи радиация, выходить нельзя минимум 5 лет.","Смертельная пандемия. Поверхность закрыта на 3 года.","Падение астероида. Пылевая зима продлится 10 лет.","Супервулкан. Пепел закрыл солнце на 4 года.","Восстание машин. Поверхность под контролем дронов.","Вирус-зомби. Города заполнены заражёнными."];
+const BT=[
+{name:"Соляная шахта",where:"Заброшенная соляная шахта в горах, глубина 120 м, вход через старый грузовой лифт.",built:"Выработка 1960-х, в 1980-х переоборудована под убежище: бетонные перегородки и герметичные двери."},
+{name:"Военный командный пункт",where:"Секретный объект в сосновом лесу, глубина 60 м, вход замаскирован под сторожку.",built:"Построен в 1970-х из армированного бетона, толщина стен 2 м, два шлюза."},
+{name:"Бункер-отель",where:"Под горным курортом, глубина 40 м, вход через лобби отеля.",built:"Построен в 2010-х частной компанией для богатых клиентов: стеклобетон и дорогая отделка."},
+{name:"Продовольственный склад",where:"Под промзоной на окраине города, глубина 30 м.",built:"Хранилище 1950-х, укреплено в 1990-х бетонными сводами."},
+{name:"Убежище под школой",where:"Под зданием старой школы в небольшом городе, глубина 10 м.",built:"Убежище гражданской обороны 1980-х, стены толщиной 1,5 м."},
+{name:"Станция метро",where:"Закрытая станция метро глубокого залегания, 50 м под землёй.",built:"Станция 1950-х, позже в тоннелях поставили герметичные ворота и вентиляцию."},
+{name:"Подземный город",big:1,where:"Огромный комплекс под горным массивом, глубина 300 м.",built:"Строился 30 лет как государственный резерв: туннели, шахты и жилые кварталы."},
+{name:"Ракетная шахта",where:"Бывшая ракетная база в степи, глубина 80 м, вход через бетонную шахту.",built:"Построена в 1960-х, стальные двери толщиной 40 см, пережила ядерные испытания."},
+{name:"БДСМ-бункер",where:"Бывший закрытый клуб под жилым кварталом, глубина 15 м, вход через неприметную дверь во дворе.",built:"Оборудован в 2000-х как подземный клуб: звукоизоляция, стальные двери, крюки и цепи на потолке."},
+{name:"Подземный спортзал",where:"Под фитнес-клубом в центре города, глубина 12 м, вход через раздевалки.",built:"Переоборудован в 2010-х: бетонные перекрытия, герметичная дверь в тренажёрный зал."},
+{name:"Бункер в школе",where:"Герметичное здание школы на окраине, спуск из спортзала на подземный этаж.",built:"Построено в 1970-х как школа с убежищем: толстые стены, тяжёлые двери в классах."},
+{name:"Университетский бункер",where:"Подземные этажи старого университета, глубина 20 м, вход через главный корпус.",built:"Тоннели и лаборатории 1960-х, позже перекрыты стальными переборками."},
+{name:"Бункер пыток",where:"Бывшее хранилище спецслужб в промзоне, глубина 25 м, вход через неприметный склад.",built:"Оборудован в 1980-х как камера допросов: кафельные стены, стальные двери, водостоки в полу."},
+{name:"Пещера «Анус дьявола»",where:"Природная пещера в горах с тесным входом и узкими извилистыми коридорами.",built:"Укреплена бетоном у входа в 1990-х, внутри сыро и пахнет серой."},
+{name:"Подземный супермаркет",where:"Подземные этажи большого супермаркета на окраине города, глубина 8 м.",built:"Парковка и склады переоборудованы в убежище в 2000-х, на входе стальная решётка."}
+];
+const BR=["Не работает очистка воздуха, фильтры придётся чинить вручную.","Протекает один из резервуаров с водой.","Сломана радиостанция, связи с поверхностью нет.","Не работает отопление, по ночам холодно.","Генератор заводится только с механиком.","Один шлюз не закрывается до конца.","Часть запасов еды испортилась.","На нижнем уровне выходит из строя вентиляция.","Не работает свет в одном из отсеков.","Протекают трубы водоснабжения.","Сломан подъёмник на поверхность."];
+const IN=["спальные отсеки","общая столовая","оранжерея с лампами","мастерская","медпункт","оружейная","библиотека","спортзал","кинозал","дизельная","склад","комната связи","баня","бассейн"];
+const IT=["вода на 2 года","семена овощей","ящик инструментов","сухпайки на 8 месяцев","аптечка","дизельное топливо на год","фонари и батарейки","радиоаппаратура","книги и настольные игры","набор для рыбалки","запас тёплой одежды","кухонная утварь","мешки с крупой","генератор","оружие без боеприпасов"];
+function pickN(a,n){const c=a.slice(),o=[];while(o.length<n&&c.length)o.push(c.splice(Math.floor(Math.random()*c.length),1)[0]);return o}
+function mkBunker(){
+  const t=rnd(BT),lv=1+Math.floor(Math.random()*5);
+  let area,cap;
+  if(t.big){const km=(1+Math.floor(Math.random()*50)/10).toFixed(1);area=km.replace(".",",")+" км²";cap=300+Math.floor(Math.random()*12)*50}
+  else{const m2=100+Math.floor(Math.random()*47)*50;area=m2+" м²";cap=Math.max(8,Math.round(m2/30/5)*5)}
+  const inside=pickN(IN,4).join(", ");
+  return{name:t.name,where:t.where,built:t.built,size:"Площадь: "+area+", уровней: "+lv+". Рассчитан на "+cap+" человек.",broken:pickN(BR,2).join(" "),inside:inside[0].toUpperCase()+inside.slice(1)+".",items:(function(){const x=pickN(IT,5).join(", ");return x[0].toUpperCase()+x.slice(1)+"."})()};
+}
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const rnd=a=>a[Math.floor(Math.random()*a.length)];
+const msg=t=>{$("#err").textContent=t||""};
+let isHost=false,peer=null,conn=null,H=null,V=null,code="";
+function mySid(){try{let s=sessionStorage.getItem("bsid");if(!s){s=Math.random().toString(36).slice(2,10);sessionStorage.setItem("bsid",s)}return s}catch(e){return Math.random().toString(36).slice(2,10)}}
+function hCount(){
+  const r=Math.random();let acc=0;
+  for(const [n,p] of [[7,2.41e-16],[6,1.75e-6],[5,3.73e-5],[4,.05],[3,.27],[2,.4]]){acc+=p;if(r<acc)return n}
+  return 1}
+function hgt(){
+  const r=Math.random();let h;
+  if(r<.85)h=150+Math.floor(Math.random()*51);
+  else if(r<.92)h=50+Math.floor(Math.random()*100);
+  else h=Math.round(Math.exp(Math.log(201)+Math.random()*(Math.log(1000)-Math.log(201))));
+  return h<300?h+" см":(h/100).toFixed(1).replace(".",",")+" м"}
+const ADULT=/порно|шлюх|ночная бабочка|онлифанс|дроч|пятки|куколд|извращен|нимфоман|озабочен|милф|некрофил|оргию|бабник|секс|дилдо|вибратор|презерватив|виагра|афродизиак|вагин|голая|сиськ|booty|thick|член|яйц|яичек|импотент|пизд|жопе|гениталий|половой акт|очко|смазк|манга (яой|юри)|big bob|трусы|синс|штурвал|алкоголик|водк|пива|амфетамин|героин|марихуан|варил мет|бесплоди/i;
+const OV={m:["Гетеро","Гей","Бисексуал","Фанат Джоджо"],f:["Гетеро","Лесбиянка","Бисексуалка","Фанатка яой"],n:["Асексуал","Любит только себя"]};
+const MINOR_OR="Не применимо (ещё ребёнок)";
+const okf=c=>l=>c.a<18?l.filter(x=>!ADULT.test(x)):l;
+function raceRange(c){
+  const rt=SP.find(x=>x[0]===c.race)||[];
+  let lo=5,hi=200;
+  if(rt[2]){lo=rt[2];hi=rt[3]}
+  if(ADULT.test(c.race))lo=Math.max(lo,18);
+  return{rt,lo,hi}}
+function genAge(c){
+  const{rt,lo,hi}=raceRange(c),gr=Math.random();
+  c.g=gr<.15?"n":rt[1]?"f":gr<.575?"m":"f";
+  c.a=lo+Math.floor(Math.random()*(hi-lo+1));
+  c.fi=(c.g==="f"&&c.a>45&&c.a<=200)||Math.random()<.3}
+function fmtAge(c){
+  const f=c.g==="f";
+  return(c.g==="n"?"Бесполый":f?"Женский":"Мужской")+", "+c.a.toLocaleString("ru-RU")+" "+yw(c.a)+(c.a<18?"":", "+(c.g==="n"?"не может иметь детей":c.fi?(f?"бесплодна":"бесплоден"):"может иметь детей"))}
+function rollOrient(c){
+  if(c.a<18)return MINOR_OR;
+  if(c.g==="n")return rnd(OV.n);
+  const f=c.g==="f",r=Math.random();
+  return r<.6?"Гетеро":r<.73?(f?"Лесбиянка":"Гей"):r<.86?(f?"Бисексуалка":"Бисексуал"):(f?"Фанатка яой":"Фанат Джоджо")}
+function rollHealth(c){
+  const n=hCount();
+  let pool=okf(c)(D.health.concat(c.g==="f"?HF:c.g==="m"?HM:[]));
+  if(n>1)pool=pool.filter(x=>x!=="Полностью здоров"&&x!=="Железное здоровье");
+  return pickN(pool,n).join(", ")}
+const fixItem=x=>x==="Гантели"?"Гантели "+(1+Math.floor(Math.random()*50))+" кг":x;
+function rollPack(c){
+  let np=2;
+  if(Math.random()<.7){np=3;if(Math.random()<.55){np=4;if(Math.random()<.35)np=5}}
+  return pickN(okf(c)(D.pack),np).map(fixItem).join(", ")}
+function rollBig(c){return pickN(okf(c)(D.big),Math.random()<.4?2:1).join(", ")}
+function rollKey(c,k){
+  if(k==="race")c.race=rnd(SP)[0];
+  else if(k==="age")genAge(c);
+  else if(k==="orient")c.orient=rollOrient(c);
+  else if(k==="health")c.health=rollHealth(c);
+  else if(k==="pack")c.pack=rollPack(c);
+  else if(k==="big")c.big=rollBig(c);
+  else if(k==="build")c.build=rnd(D.build)+", рост "+hgt();
+  else c[k]=rnd(okf(c)(D[k]))}
+function norm(c){
+  const{rt,lo,hi}=raceRange(c);
+  if(rt[1]&&c.g==="m")c.g="f";
+  if(c.a<lo||c.a>hi){c.a=lo+Math.floor(Math.random()*(hi-lo+1));c.fi=(c.g==="f"&&c.a>45&&c.a<=200)||Math.random()<.3}
+  c.age=fmtAge(c);
+  if(c.a<18){
+    c.orient=MINOR_OR;
+    ["prof","trait","hobby","phobia","fact","health","pack","big"].forEach(k=>{if(ADULT.test(c[k]))rollKey(c,k)});
+  }else if(!OV[c.g].includes(c.orient))c.orient=rollOrient(c);
+  if((c.g!=="m"&&HM.some(x=>c.health.includes(x)))||(c.g!=="f"&&HF.some(x=>c.health.includes(x))))c.health=rollHealth(c);
+  return c}
+function deal(){
+  const c={race:rnd(SP)[0]};
+  genAge(c);
+  ["prof","trait","hobby","phobia","fact"].forEach(k=>c[k]=rnd(okf(c)(D[k])));
+  c.build=rnd(D.build)+", рост "+hgt();
+  c.health=rollHealth(c);c.orient=rollOrient(c);c.pack=rollPack(c);c.big=rollBig(c);
+  return norm(c)}
+const nm=i=>(H.players[i]&&H.players[i].name)||"игрок";
+
+const AB=[
+{id:"choose",n:"Замена на выбор",d:"Выберите свою характеристику и один из трёх случайных вариантов замены.",need:"key",tg:"self",pend:1},
+{id:"reroll",n:"Случайная замена",d:"Случайно заменить выбранную характеристику себе или другому игроку.",need:"key",tg:"any"},
+{id:"steal",n:"Кража рюкзака",d:"Забрать рюкзак у соседа (игрок до или после вас). Вещи достанутся вам, у него будет пусто.",tg:"nb"},
+{id:"swap",n:"Подмена",d:"Выберите игрока и его характеристику, затем один из трёх случайных вариантов замены.",need:"key",tg:"other",pend:1},
+{id:"addpack",n:"Ещё одна мелочь",d:"Добавить случайную вещь в свой рюкзак.",tg:"self"},
+{id:"addbig",n:"Ещё один крупный предмет",d:"Добавить случайную вещь в свой крупный инвентарь.",tg:"self"},
+{id:"rebirth",n:"Перерождение",d:"Получить полностью новую карточку. Всё снова станет скрытым.",tg:"self"},
+{id:"spy",n:"Шпионаж",d:"Тайно узнать одну характеристику другого игрока (видите только вы).",need:"key",tg:"other"},
+{id:"immune",n:"Иммунитет",d:"Вас нельзя изгнать в этом раунде: голоса против вас пропадают.",tg:"self"}
+];
+function nbrs(s){
+  const al=H.alive,i=al.indexOf(s);
+  if(i<0)return[];
+  return[...new Set([al[(i+al.length-1)%al.length],al[(i+1)%al.length]])].filter(x=>x!==s)}
+function spLog(s,ab,t,k){
+  H.log.push(nm(s)+" использовал «"+ab.n+"»"+(ab.tg==="self"||t===s||ab.id==="spy"?"":" на "+nm(t))+(k&&ab.id!=="spy"?" (характеристика: "+TR[k]+")":"")+".")}
+const addTo=(c,k,item)=>{c[k]=/^Пусто/.test(c[k])?item:c[k]+", "+item};
+function spRun(s,a,prep){
+  const p=H.players[s];
+  if(!p||!a||typeof a!=="object"||!H.alive.includes(s)||(H.phase!=="reveal"&&H.phase!=="vote")||p.pend)return;
+  p.note="";
+  const slot=a.slot===1?1:0,ab=AB.find(x=>x.id===(p.sp||[])[slot]);
+  if(!ab||!p.spu||p.spu[slot]||!!ab.pend!==prep)return;
+  let t=s;
+  if(ab.tg!=="self"){
+    t=a.target;
+    if(!H.alive.includes(t)||!H.players[t].card)return;
+    if(ab.tg==="other"&&t===s)return;
+    if(ab.tg==="nb"&&!nbrs(s).includes(t))return;
+  }
+  const k=a.key;
+  if(ab.need==="key"&&!KEYS.includes(k))return;
+  const tc=H.players[t].card;
+  if(!tc||!p.card)return;
+  if(ab.pend){
+    const cands=[],seen=new Set([tc[k]]);
+    for(let i=0;i<60&&cands.length<3;i++){
+      const c=JSON.parse(JSON.stringify(tc));
+      rollKey(c,k);norm(c);
+      if(!seen.has(c[k])){seen.add(c[k]);cands.push(c)}
+    }
+    if(!cands.length){p.note="Для этой характеристики нет других вариантов. Выберите другую.";return}
+    p.pend={slot,ab,key:k,target:t,cands,base:JSON.stringify(tc)};
+    return;
+  }
+  const c=JSON.parse(JSON.stringify(tc));
+  if(ab.id==="reroll"){rollKey(c,k);norm(c);H.players[t].card=c}
+  else if(ab.id==="steal"){
+    const th=JSON.parse(JSON.stringify(p.card));
+    if(!/^Пусто/.test(c.pack))addTo(th,"pack",c.pack);
+    c.pack="Пусто (рюкзак украден)";
+    H.players[t].card=c;p.card=norm(th);
+  }
+  else if(ab.id==="addpack"){addTo(c,"pack",fixItem(rnd(okf(c)(D.pack))));p.card=c}
+  else if(ab.id==="addbig"){addTo(c,"big",rnd(okf(c)(D.big)));p.card=c}
+  else if(ab.id==="rebirth"){p.card=deal();p.rev={}}
+  else if(ab.id==="spy"){(p.spy=p.spy||[]).push({t,k})}
+  else if(ab.id==="immune"){p.imm=H.round}
+  else return;
+  p.spu[slot]=true;
+  spLog(s,ab,t,k);
+}
+/* ---------- Ведущий: игровая логика ---------- */
+function tally(){
+  const el=H.alive.filter(i=>H.players[i].imm!==H.round);
+  if(!el.length)return null;
+  const c={};el.forEach(i=>c[i]=0);
+  H.alive.forEach(v=>{const t=H.votes[v];if(t&&t!==v&&c[t]!==undefined)c[t]++});
+  const mx=Math.max(...Object.values(c));
+  const top=el.filter(i=>c[i]===mx);
+  return{out:rnd(top),mx,tie:top.length>1};
+}
+const A={
+  start(s){
+    if(s!=="host")return;
+    const ids=H.order.filter(i=>!H.players[i].off);
+    if(ids.length<2){msg("Нужно минимум 2 игрока");return}
+    msg("");
+    H.order.forEach(i=>{const q=H.players[i];q.card=null;q.rev={};q.rr=0;q.sp=[];q.spu=[false,false];q.pend=null;q.imm=0;q.spy=[]});
+    ids.forEach(i=>{const q=H.players[i];q.card=deal();q.sp=pickN(AB.map(x=>x.id),2)});
+    Object.assign(H,{alive:ids,out:[],spots:Math.max(1,Math.floor(ids.length/2)),disaster:rnd(DIS),bunker:mkBunker(),phase:"reveal",round:1,votes:{},log:["Игра началась. Раскройте по одной карте."]});
+  },
+  reveal(s,k){
+    const p=H.players[s];
+    if(H.phase!=="reveal"||!H.alive.includes(s)||!p.card||!KEYS.includes(k)||p.rr===H.round)return;
+    p.rev[k]=H.round;p.rr=H.round;
+  },
+  tovote(s){if(s!=="host"||H.phase!=="reveal")return;H.phase="vote";H.votes={};H.log.push("Раунд "+H.round+": началось голосование.")},
+  vote(s,t){if(H.phase==="vote"&&H.alive.includes(s)&&H.alive.includes(t)&&s!==t)H.votes[s]=t},
+  finish(s){
+    if(s!=="host"||H.phase!=="vote")return;
+    const r=tally();
+    if(!r){H.log.push("Раунд "+H.round+": у всех иммунитет, никто не изгнан.");H.votes={};H.phase="reveal";H.round++;return}
+    const alive=H.alive.filter(i=>i!==r.out),over=alive.length<=H.spots;
+    H.log.push("Раунд "+H.round+": бункер покидает "+nm(r.out)+" (голосов: "+r.mx+(r.tie?", ничья — жребий":"")+").");
+    if(over)H.log.push("Игра окончена. В бункере остались: "+alive.map(nm).join(", ")+".");
+    H.alive=alive;H.out.push(r.out);H.votes={};
+    if(over)H.phase="over";else{H.phase="reveal";H.round++}
+  },
+  spuse(s,a){spRun(s,a,false)},
+  spprep(s,a){spRun(s,a,true)},
+  sppick(s,i){
+    const p=H.players[s],pe=p&&p.pend;
+    if(!pe)return;
+    const t=H.players[pe.target],c=pe.cands[i];
+    if(!t||!c||!t.card||JSON.stringify(t.card)!==pe.base||!H.alive.includes(s)||(H.phase!=="reveal"&&H.phase!=="vote")){p.pend=null;return}
+    t.card=c;p.spu[pe.slot]=true;p.pend=null;
+    spLog(s,pe.ab,pe.target,pe.key);
+  },
+  spcancel(s){const p=H.players[s];if(p)p.pend=null},
+  restart(s){A.start(s)},
+  skip(s){if(s!=="host"||(H.phase!=="reveal"&&H.phase!=="vote"))return;H.log.push("Раунд "+H.round+": голосование пропущено, никто не изгнан.");H.votes={};H.phase="reveal";H.round++},
+  again(s){if(s!=="host")return;Object.assign(H,{phase:"lobby",round:0,alive:[],out:[],votes:{},log:[]});H.order.forEach(i=>{H.players[i].card=null;H.players[i].rev={}})}
+};
+function step(t,s,arg){if(!H.players[s]||!A[t])return;A[t](s,arg);broadcast()}
+function view(id){
+  const over=H.phase==="over",me=H.players[id];
+  return{code,me:id,hostId:"host",phase:H.phase,round:H.round,spots:H.spots,disaster:H.disaster,bunker:H.bunker,log:H.log.slice(-8),
+    voted:Object.keys(H.votes).length,myVote:H.votes[id]||null,
+    canRev:H.phase==="reveal"&&H.alive.includes(id)&&!!me.card&&me.rr!==H.round,
+    note:me.note||"",
+    sp:(me.sp||[]).map((x,j)=>{const a=AB.find(y=>y.id===x);return{id:x,n:a.n,d:a.d,used:!!(me.spu&&me.spu[j])}}),
+    pend:me.pend?{n:me.pend.ab.n,k:me.pend.key,tname:nm(me.pend.target),c:me.pend.cands.map(c=>c[me.pend.key])}:null,
+    spy:(me.spy||[]).map(x=>{const tc=H.players[x.t]&&H.players[x.t].card;return{name:nm(x.t),k:TR[x.k],v:tc?tc[x.k]:"?"}}),
+    nbs:nbrs(id).map(i=>({id:i,name:nm(i)})),
+    players:H.order.map(i=>{
+      const p=H.players[i],out=H.out.includes(i),full=i===id||out||over;
+      let vals;
+      if(p.card)vals=full?p.card:Object.fromEntries(Object.keys(p.rev).map(k=>[k,p.card[k]]));
+      return{id:i,name:p.name,st:out?"out":H.alive.includes(i)?"in":"spec",off:!!p.off,rv:p.rev,vals,sl:(p.sp||[]).filter((x,j)=>!(p.spu&&p.spu[j])).length};
+    })};
+}
+function broadcast(){
+  H.order.forEach(i=>{
+    const p=H.players[i];
+    if(i==="host"){V=view("host");render()}
+    else if(p.conn&&p.conn.open)p.conn.send({t:"v",v:view(i)});
+  });
+}
+function onMsg(c,m){
+  if(!m||typeof m!=="object")return;
+  if(m.t==="join"){
+    const s=String(m.sid||"").slice(0,16),name=String(m.name||"Игрок").slice(0,24);
+    if(!s||s==="host")return;
+    if(!H.players[s]){H.players[s]={name,card:null,rev:{}};H.order.push(s)}
+    const p=H.players[s];p.name=name;p.conn=c;p.off=false;c._sid=s;
+    broadcast();
+  }else if(c._sid)step(m.t,c._sid,m.arg);
+}
+function onClose(c){
+  const s=c._sid,p=s&&H.players[s];
+  if(!p||p.conn!==c)return;
+  p.off=true;p.conn=null;
+  if(H.phase==="lobby"){delete H.players[s];H.order=H.order.filter(i=>i!==s)}
+  broadcast();
+}
+
+/* ---------- Соединение ---------- */
+function genCode(){const a="ABCDEFGHJKMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<5;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
+function createRoom(name){
+  isHost=true;
+  H={phase:"lobby",round:0,spots:0,alive:[],out:[],log:[],votes:{},players:{host:{name,card:null,rev:{}}},order:["host"]};
+  tryPeer(0);
+}
+function tryPeer(n){
+  code=genCode();
+  const p=new Peer("bunker-"+code);peer=p;
+  p.on("open",()=>{V=view("host");render()});
+  p.on("error",e=>{
+    if(e.type==="unavailable-id"&&n<5){p.destroy();tryPeer(n+1)}
+    else{msg("Ошибка связи: "+e.type+". Обновите страницу.")}
+  });
+  p.on("connection",c=>{c.on("data",m=>onMsg(c,m));c.on("close",()=>onClose(c))});
+}
+function joinRoom(name,c){
+  isHost=false;code=c;
+  const p=new Peer();peer=p;
+  p.on("open",()=>{
+    conn=p.connect("bunker-"+code,{reliable:true});
+    conn.on("open",()=>conn.send({t:"join",sid:mySid(),name}));
+    conn.on("data",m=>{if(m&&m.t==="v"){msg("");V=m.v;render()}});
+    conn.on("close",()=>msg("Связь с ведущим потеряна. Обновите страницу и войдите с тем же именем и кодом."));
+  });
+  p.on("error",e=>{
+    msg(e.type==="peer-unavailable"?"Комната с таким кодом не найдена.":"Ошибка связи: "+e.type);
+    if(e.type==="peer-unavailable"){$("#start").hidden=false;peer=null}
+  });
+}
+function send(t,arg){
+  if(isHost)step(t,"host",arg);
+  else if(conn&&conn.open)conn.send({t,arg});
+  else msg("Нет связи с ведущим.");
+}
+
+/* ---------- Интерфейс ---------- */
+let UI={slot:-1,key:"prof",target:""};
+function tgOpts(ab){
+  const al=V.players.filter(p=>p.st==="in");
+  if(ab.tg==="any")return al.map(p=>({id:p.id,name:p.name+(p.id===V.me?" (вы)":"")}));
+  if(ab.tg==="other")return al.filter(p=>p.id!==V.me).map(p=>({id:p.id,name:p.name}));
+  if(ab.tg==="nb")return V.nbs||[];
+  return[]}
+function spForm(ab){
+  let h='<div class="row">';
+  if(ab.need==="key")h+='<select data-ui="key">'+KEYS.map(k=>'<option value="'+k+'"'+(UI.key===k?' selected':'')+'>'+esc(TR[k])+'</option>').join("")+'</select>';
+  if(ab.tg!=="self"){
+    const o=tgOpts(ab),sel=o.some(x=>x.id===UI.target)?UI.target:(o[0]&&o[0].id);
+    h+='<select data-ui="target">'+o.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===sel?' selected':'')+'>'+esc(x.name)+'</option>').join("")+'</select>';
+  }
+  return h+'<button class="sm" type="button" data-act="spgo">'+(ab.pend?'Показать варианты':'Применить')+'</button><button class="sm alt" type="button" data-act="spclose">Отмена</button></div>'}
+function spHtml(){
+  const me=V.players.find(p=>p.id===V.me);
+  if(!me||me.st!=="in"||(V.phase!=="reveal"&&V.phase!=="vote")||!V.sp||!V.sp.length)return"";
+  let h='<h2>Спецвозможности</h2><div class="mu">Каждая используется один раз, в любой момент, и не считается раскрытием характеристики.</div>';
+  if(V.note)h+='<div style="color:var(--bad);margin:6px 0">'+esc(V.note)+'</div>';
+  if(V.pend)h+='<div class="card me"><b>'+esc(V.pend.n)+': выберите вариант</b><div class="mu">'+esc(TR[V.pend.k])+' — '+esc(V.pend.tname)+'</div>'+V.pend.c.map((t,i)=>'<div class="tr"><span class="v">'+esc(t)+'</span><button class="sm" type="button" data-act="pick" data-id="'+i+'">Выбрать</button></div>').join("")+'<div class="row"><button class="alt" type="button" data-act="pcancel">Отмена</button></div></div>';
+  V.sp.forEach((x,i)=>{
+    const ab=AB.find(y=>y.id===x.id);
+    h+='<div class="card"><div class="hd"><b>'+esc(x.n)+'</b>'+(x.used?'<span class="badge">использовано</span>':'')+'</div><div class="mu">'+esc(x.d)+'</div>';
+    if(!x.used&&!V.pend)h+=UI.slot===i?spForm(ab):'<div class="row"><button class="sm" type="button" data-act="spopen" data-id="'+i+'">Использовать</button></div>';
+    h+='</div>';
+  });
+  if(V.spy&&V.spy.length)h+='<div class="card"><b>Что вы узнали (видите только вы)</b><ul>'+V.spy.map(x=>'<li>'+esc(x.name)+' — '+esc(x.k)+': '+esc(x.v)+'</li>').join("")+'</ul></div>';
+  return h}
+function spGo(){
+  const x=V.sp&&V.sp[UI.slot],ab=x&&AB.find(y=>y.id===x.id);
+  if(!ab)return;
+  const o=tgOpts(ab),target=ab.tg==="self"?V.me:(o.some(z=>z.id===UI.target)?UI.target:(o[0]&&o[0].id));
+  if(ab.tg!=="self"&&!target){msg("Нет подходящей цели");return}
+  msg("");
+  send(ab.pend?"spprep":"spuse",{slot:UI.slot,key:UI.key,target});
+  UI.slot=-1}
+function rows(p){
+  if(!p.vals)return '<p class="mu">Карточка не выдана</p>';
+  const full=p.st==="out"||V.phase==="over";
+  return KEYS.map(k=>{
+    const val=p.vals[k],rv=p.rv&&p.rv[k]!==undefined;
+    let v;
+    if(val===undefined)v='<span class="v hid">скрыто</span>';
+    else if(rv||full)v='<span class="v">'+esc(val)+'</span>';
+    else v='<span class="v hid">'+esc(val)+' (видите только вы)</span>'+(V.canRev?'<button class="sm" type="button" data-act="reveal" data-id="'+k+'">Раскрыть</button>':'');
+    return '<div class="tr"><span class="k">'+TR[k]+'</span>'+v+'</div>';
+  }).join("");
+}
+function bunkerHtml(b){
+  const L={where:"Где находится",built:"Как построен",size:"Размер",broken:"Поломки",inside:"Что внутри",items:"Предметы"};
+  if(!b||typeof b!=="object")return "";
+  return '<div class="card"><b>Бункер: '+esc(b.name)+'</b>'+Object.keys(L).map(k=>'<div class="tr"><span class="k">'+L[k]+'</span><span class="v">'+esc(b[k])+'</span></div>').join("")+'</div>';
+}
+function render(){
+  const m=$("#main");
+  $("#start").hidden=!!peer;
+  if(!V){m.innerHTML=peer?'<p class="mu">Подключаюсь…</p>':"";return}
+  const host=V.me==="host",ph=V.phase,me=V.players.find(p=>p.id===V.me);
+  if(ph==="lobby"){
+    const link=location.href.split("#")[0]+"#"+V.code;
+    m.innerHTML='<h2>Лобби</h2>'+
+      '<div class="card"><div class="mu">Код комнаты</div><div class="code">'+esc(V.code)+'</div>'+
+      (host?'<div class="mu" style="margin-top:6px">Ссылка для друзей:</div><div class="link">'+esc(link)+'</div>':'')+'</div>'+
+      '<div class="card"><b>Игроки ('+V.players.length+')</b><ul>'+V.players.map(p=>'<li>'+esc(p.name)+(p.id==="host"?' — ведущий':'')+(p.id===V.me?' (вы)':'')+'</li>').join("")+'</ul></div>'+
+      (host?'<button type="button" data-act="start">Начать игру</button><p class="mu">Не закрывайте эту вкладку и не давайте экрану гаснуть: комната живёт, пока она открыта у ведущего.</p>':'<p class="mu">Ждём, пока ведущий начнёт игру.</p>');
+    return;
+  }
+  const inGame=me&&me.st==="in";
+  const label={reveal:"Раскрытие и обсуждение",vote:"Голосование",over:"Игра окончена"}[ph];
+  let h='<div class="card"><b>Катастрофа</b><div>'+esc(V.disaster)+'</div></div>'+bunkerHtml(V.bunker);
+  h+='<div class="card"><b>Раунд '+V.round+'</b> · '+label+' · мест в бункере: <b>'+V.spots+'</b>, в игре: '+V.players.filter(p=>p.st==="in").length;
+  if(ph==="vote")h+=' · проголосовало: '+V.voted;
+  if(me&&me.st==="spec")h+='<div class="mu">Вы наблюдаете: игра уже началась.</div>';
+  h+='</div>';
+  if(host){
+    h+='<div class="row">';
+    if(ph==="reveal")h+='<button type="button" data-act="tovote">К голосованию</button><button class="alt" type="button" data-act="skip">Пропустить голосование</button>';
+    if(ph==="vote")h+='<button type="button" data-act="finish">Подвести итоги</button><button class="alt" type="button" data-act="skip">Пропустить, никого не изгонять</button>';
+    if(ph==="over")h+='<button type="button" data-act="again">Новая игра</button>';
+    h+='<button class="alt" type="button" data-act="restart">Начать заново (новые карточки)</button>';
+    h+='</div>';
+  }
+  h+=spHtml();
+  h+='<h2>Игроки</h2>';
+  V.players.filter(p=>p.st!=="spec").forEach(p=>{
+    const isMe=p.id===V.me,mine=V.myVote===p.id;
+    h+='<div class="card'+(isMe?' me':'')+(p.st==="out"?' out':'')+'"><div class="hd"><b>'+esc(p.name)+(isMe?' (вы)':'')+'</b><span>'+
+      (p.st==="out"?'<span class="badge bad">исключён</span>':ph==="over"?'<span class="badge ok">в бункере</span>':'<span class="badge">'+(p.off?'нет связи':'в игре')+'</span> <span class="badge">спец: '+p.sl+'</span>')+
+      (ph==="vote"&&inGame&&p.st==="in"&&!isMe?' <button class="sm'+(mine?' on':'')+'" type="button" data-act="vote" data-id="'+esc(p.id)+'">'+(mine?'Ваш голос':'Голосовать')+'</button>':'')+
+      '</span></div>'+rows(p)+'</div>';
+  });
+  h+='<h2>Ход игры</h2><ul>'+V.log.slice().reverse().map(l=>'<li>'+esc(l)+'</li>').join("")+'</ul>';
+  m.innerHTML=h;
+}
+$("#main").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-act]");
+  if(!b)return;
+  const ac=b.dataset.act;
+  if(ac==="spopen"){UI={slot:+b.dataset.id,key:"prof",target:""};render();return}
+  if(ac==="spclose"){UI.slot=-1;render();return}
+  if(ac==="spgo"){spGo();return}
+  if(ac==="pick"){send("sppick",+b.dataset.id);return}
+  if(ac==="pcancel"){send("spcancel");return}
+  if(b.dataset.act==="restart"&&!confirm("Начать заново? Все получат новые карточки, бункер и катастрофу."))return;
+  send(b.dataset.act,b.dataset.id);
+});
+$("#main").addEventListener("change",e=>{const u=e.target.dataset&&e.target.dataset.ui;if(u)UI[u]=e.target.value});
+function nameVal(){
+  const n=$("#nm").value.trim();
+  if(!n){msg("Введите имя");return null}
+  try{localStorage.setItem("bname",n)}catch(e){}
+  msg("");return n;
+}
+$("#mk").addEventListener("click",()=>{const n=nameVal();if(n){if(typeof Peer==="undefined"){msg("Не загрузилась библиотека связи. Проверьте интернет.");return}createRoom(n);render()}});
+$("#jn").addEventListener("click",()=>{
+  const n=nameVal(),c=$("#cd").value.trim().toUpperCase();
+  if(!n)return;
+  if(c.length<5){msg("Введите код комнаты из 5 символов");return}
+  if(typeof Peer==="undefined"){msg("Не загрузилась библиотека связи. Проверьте интернет.");return}
+  joinRoom(n,c);render();
+});
+try{const n=localStorage.getItem("bname");if(n)$("#nm").value=n}catch(e){}
+if(location.hash.length>1)$("#cd").value=location.hash.slice(1).toUpperCase().slice(0,5);
+</script>
+</body>
+</html>
