@@ -215,14 +215,30 @@ const AB=[
 {id:"addbig",n:"Ещё один крупный предмет",d:"Добавить случайную вещь в свой крупный инвентарь.",tg:"self"},
 {id:"rebirth",n:"Перерождение",d:"Получить полностью новую карточку. Всё снова станет скрытым.",tg:"self"},
 {id:"spy",n:"Шпионаж",d:"Тайно узнать одну характеристику другого игрока (видите только вы).",need:"key",tg:"other"},
-{id:"immune",n:"Иммунитет",d:"Вас нельзя изгнать в этом раунде: голоса против вас пропадают.",tg:"self"}
+{id:"immune",n:"Иммунитет",d:"Вас нельзя изгнать в этом раунде: голоса против вас пропадают.",tg:"self"},
+{id:"anyitem",n:"Любой предмет",d:"Впишите название любого предмета: он случайно попадёт в ваш рюкзак или крупный инвентарь.",tg:"self",item:1},
+{id:"master",n:"Мастер на все руки",d:"Чинит все поломки в бункере. Если поломок уже нет, вы просто получите ящик инструментов.",tg:"self"},
+{id:"planner",n:"Планировщик",d:"Добавляет одно место в бункер.",tg:"self"},
+{id:"joker",n:"Карта джокера",d:"Меняет одну случайную характеристику случайному игроку. В журнал записывается, кому и что изменили.",tg:"self"},
+{id:"godhand",n:"Рука бога перерождения",d:"Перерождение (полностью новая карточка) для вас или выбранного игрока.",tg:"any"}
 ];
+const ABW={master:10,planner:15,godhand:15};
+function pickAb(){
+  const ids=AB.map(x=>x.id),fixed=Object.keys(ABW).reduce((a,k)=>a+ABW[k],0),others=ids.filter(i=>!(i in ABW));
+  const w=i=>i in ABW?ABW[i]:(100-fixed)/others.length,out=[];
+  while(out.length<2){
+    const pool=ids.filter(i=>!out.includes(i));
+    let r=Math.random()*pool.reduce((a,i)=>a+w(i),0),pick=pool[pool.length-1];
+    for(const i of pool){r-=w(i);if(r<0){pick=i;break}}
+    out.push(pick);
+  }
+  return out}
 function nbrs(s){
   const al=H.alive,i=al.indexOf(s);
   if(i<0)return[];
   return[...new Set([al[(i+al.length-1)%al.length],al[(i+1)%al.length]])].filter(x=>x!==s)}
-function spLog(s,ab,t,k){
-  H.log.push(nm(s)+" использовал «"+ab.n+"»"+(ab.tg==="self"||t===s||ab.id==="spy"?"":" на "+nm(t))+(k&&ab.id!=="spy"?" (характеристика: "+TR[k]+")":"")+".")}
+function spLog(s,ab,t,k,x){
+  H.log.push(nm(s)+" использовал «"+ab.n+"»"+(ab.tg==="self"||t===s||ab.id==="spy"?"":" на "+nm(t))+(k&&ab.need==="key"&&ab.id!=="spy"?" (характеристика: "+TR[k]+")":"")+(x?": "+x:"")+".")}
 const addTo=(c,k,item)=>{c[k]=/^Пусто/.test(c[k])?item:c[k]+", "+item};
 function spRun(s,a,prep){
   const p=H.players[s];
@@ -253,6 +269,7 @@ function spRun(s,a,prep){
     return;
   }
   const c=JSON.parse(JSON.stringify(tc));
+  let x="",endNow=false;
   if(ab.id==="reroll"){rollKey(c,k);norm(c);H.players[t].card=c}
   else if(ab.id==="steal"){
     const th=JSON.parse(JSON.stringify(p.card));
@@ -262,12 +279,43 @@ function spRun(s,a,prep){
   }
   else if(ab.id==="addpack"){addTo(c,"pack",fixItem(rnd(okf(c)(D.pack))));p.card=c}
   else if(ab.id==="addbig"){addTo(c,"big",rnd(okf(c)(D.big)));p.card=c}
+  else if(ab.id==="anyitem"){
+    let item=String(a.item||"").replace(/\s+/g," ").trim().slice(0,60);
+    if(!item){p.note="Введите название предмета.";return}
+    if(c.a<18){
+      const known=D.pack.concat(D.big).find(x=>x.toLowerCase()===item.toLowerCase());
+      if(!known||ADULT.test(known)){p.note="Для персонажей младше 18 лет можно вписать только предметы из общего списка, без взрослых.";return}
+      item=known;
+    }
+    addTo(c,Math.random()<.5?"pack":"big",fixItem(item));p.card=c}
   else if(ab.id==="rebirth"){p.card=deal();p.rev={}}
+  else if(ab.id==="master"){
+    if(H.bunker.fixed){x="в бункере нет поломок";addTo(c,"big","Ящик инструментов");p.card=c}
+    else{H.bunker.fixed=true;H.bunker.broken="Все поломки устранены (Мастер на все руки).";x="все поломки в бункере починены"}
+  }
+  else if(ab.id==="planner"){
+    H.spots++;x="в бункере стало на одно место больше (мест: "+H.spots+")";
+    if(H.alive.length<=H.spots)endNow=true;
+  }
+  else if(ab.id==="joker"){
+    const al=H.alive.filter(i=>H.players[i].card);
+    let tid,key,jc;
+    for(let i=0;i<40;i++){
+      tid=rnd(al);key=rnd(KEYS);
+      jc=JSON.parse(JSON.stringify(H.players[tid].card));
+      rollKey(jc,key);norm(jc);
+      if(jc[key]!==H.players[tid].card[key])break;
+    }
+    H.players[tid].card=jc;
+    x="у игрока "+nm(tid)+" изменена характеристика «"+TR[key]+"»";
+  }
+  else if(ab.id==="godhand"){H.players[t].card=deal();H.players[t].rev={}}
   else if(ab.id==="spy"){(p.spy=p.spy||[]).push({t,k})}
   else if(ab.id==="immune"){p.imm=H.round}
   else return;
   p.spu[slot]=true;
-  spLog(s,ab,t,k);
+  spLog(s,ab,t,k,x);
+  if(endNow){H.phase="over";H.log.push("Игра окончена. В бункере остались: "+H.alive.map(nm).join(", ")+".")}
 }
 /* ---------- Ведущий: игровая логика ---------- */
 function tally(){
@@ -286,7 +334,7 @@ const A={
     if(ids.length<2){msg("Нужно минимум 2 игрока");return}
     msg("");
     H.order.forEach(i=>{const q=H.players[i];q.card=null;q.rev={};q.rr=0;q.sp=[];q.spu=[false,false];q.pend=null;q.imm=0;q.spy=[]});
-    ids.forEach(i=>{const q=H.players[i];q.card=deal();q.sp=pickN(AB.map(x=>x.id),2)});
+    ids.forEach(i=>{const q=H.players[i];q.card=deal();q.sp=pickAb()});
     Object.assign(H,{alive:ids,out:[],spots:Math.max(1,Math.floor(ids.length/2)),disaster:rnd(DIS),bunker:mkBunker(),phase:"reveal",round:1,votes:{},log:["Игра началась. Раскройте по одной карте."]});
   },
   reveal(s,k){
@@ -317,6 +365,29 @@ const A={
     spLog(s,pe.ab,pe.target,pe.key);
   },
   spcancel(s){const p=H.players[s];if(p)p.pend=null},
+  adm(s,a){
+    if(s!=="host"||!a||typeof a!=="object")return;
+    const hp=H.players.host;hp.note="";
+    const t=H.players[a.target];
+    if(!t||!t.card||!KEYS.includes(a.key))return;
+    const c=JSON.parse(JSON.stringify(t.card)),v=String(a.val||"").trim().slice(0,120);
+    if(!v){rollKey(c,a.key);norm(c)}
+    else{
+      if(a.key==="age"){hp.note="Пол и возраст нельзя задать вручную: оставьте поле пустым для случайной замены.";return}
+      if(c.a<18){hp.note="Для персонажей младше 18 лет доступна только случайная замена.";return}
+      c[a.key]=v;
+    }
+    t.card=c;
+    H.log.push("Ведущий изменил характеристику игрока "+nm(a.target)+" («"+TR[a.key]+"»).");
+  },
+  kick(s,id){
+    if(s!=="host"||H.phase!=="lobby"||!id||id==="host")return;
+    const p=H.players[id];
+    if(!p)return;
+    const c=p.conn;
+    delete H.players[id];H.order=H.order.filter(i=>i!==id);
+    if(c){try{if(c.open)c.send({t:"kick"})}catch(e){}setTimeout(()=>{try{c.close()}catch(e){}},400)}
+  },
   restart(s){A.start(s)},
   skip(s){if(s!=="host"||(H.phase!=="reveal"&&H.phase!=="vote"))return;H.log.push("Раунд "+H.round+": голосование пропущено, никто не изгнан.");H.votes={};H.phase="reveal";H.round++},
   again(s){if(s!=="host")return;Object.assign(H,{phase:"lobby",round:0,alive:[],out:[],votes:{},log:[]});H.order.forEach(i=>{H.players[i].card=null;H.players[i].rev={}})}
@@ -365,36 +436,52 @@ function onClose(c){
 }
 
 /* ---------- Соединение ---------- */
+const TURN=[]; /* сюда можно добавить свой TURN-сервер: {urls:"turn:...",username:"...",credential:"..."} */
+const PCFG={config:{iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"},{urls:"stun:stun.cloudflare.com:3478"},...TURN]}};
+function netErr(e){
+  const t=e&&e.type;
+  if(t==="peer-unavailable")return"Комната с таким кодом не найдена. Проверьте код и что ведущий не закрыл страницу.";
+  if(["network","server-error","socket-error","socket-closed"].includes(t))return"Нет связи с сервером соединений PeerJS. Возможно, его блокирует провайдер или VPN. Попробуйте другую сеть (мобильный интернет или другой Wi-Fi).";
+  if(t==="webrtc")return"Браузер или сеть не дают установить прямое соединение. Попробуйте другой браузер или сеть.";
+  return"Ошибка связи: "+t}
 function genCode(){const a="ABCDEFGHJKMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<5;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
 function createRoom(name){
   isHost=true;
   H={phase:"lobby",round:0,spots:0,alive:[],out:[],log:[],votes:{},players:{host:{name,card:null,rev:{}}},order:["host"]};
   tryPeer(0);
+  setTimeout(()=>{if(!V)msg("Не удалось создать комнату: сервер соединений недоступен. Проверьте интернет, отключите VPN и обновите страницу.")},20000);
 }
 function tryPeer(n){
   code=genCode();
-  const p=new Peer("bunker-"+code);peer=p;
+  const p=new Peer("bunker-"+code,PCFG);peer=p;
   p.on("open",()=>{V=view("host");render()});
   p.on("error",e=>{
     if(e.type==="unavailable-id"&&n<5){p.destroy();tryPeer(n+1)}
-    else{msg("Ошибка связи: "+e.type+". Обновите страницу.")}
+    else msg(netErr(e)+" Обновите страницу.")
   });
   p.on("connection",c=>{c.on("data",m=>onMsg(c,m));c.on("close",()=>onClose(c))});
 }
 function joinRoom(name,c){
-  isHost=false;code=c;
-  const p=new Peer();peer=p;
+  isHost=false;code=c;const tok=++joinTok;
+  setTimeout(()=>{if(!V&&tok===joinTok)msg("Не удаётся соединиться за 20 секунд. Частые причины: неверный код, ведущий закрыл страницу или заблокировал экран, VPN, строгая сеть (рабочая, вузовская, у некоторых мобильных операторов). Обновите страницу и попробуйте другую сеть.")},20000);
+  const p=new Peer(PCFG);peer=p;
   p.on("open",()=>{
     conn=p.connect("bunker-"+code,{reliable:true});
     conn.on("open",()=>conn.send({t:"join",sid:mySid(),name}));
-    conn.on("data",m=>{if(m&&m.t==="v"){msg("");V=m.v;render()}});
-    conn.on("close",()=>msg("Связь с ведущим потеряна. Обновите страницу и войдите с тем же именем и кодом."));
+    conn.on("data",m=>{if(m&&m.t==="v"){msg("");V=m.v;render()}else if(m&&m.t==="kick")leaveRoom("Ведущий исключил вас из комнаты.")});
+    conn.on("close",()=>{if(tok===joinTok)msg("Связь с ведущим потеряна. Обновите страницу и войдите с тем же именем и кодом.")});
   });
   p.on("error",e=>{
-    msg(e.type==="peer-unavailable"?"Комната с таким кодом не найдена.":"Ошибка связи: "+e.type);
+    msg(netErr(e));
     if(e.type==="peer-unavailable"){$("#start").hidden=false;peer=null}
   });
 }
+function leaveRoom(text){
+  joinTok++;
+  try{if(conn)conn.close()}catch(e){}
+  try{if(peer)peer.destroy()}catch(e){}
+  conn=null;peer=null;V=null;
+  msg(text||"");render()}
 function send(t,arg){
   if(isHost)step(t,"host",arg);
   else if(conn&&conn.open)conn.send({t,arg});
@@ -402,7 +489,7 @@ function send(t,arg){
 }
 
 /* ---------- Интерфейс ---------- */
-let UI={slot:-1,key:"prof",target:""};
+let UI={slot:-1,key:"prof",target:"",cat:"pack",item:""},ADM={t:"",k:"prof",v:"",open:false},joinTok=0,deferred=false;
 function tgOpts(ab){
   const al=V.players.filter(p=>p.st==="in");
   if(ab.tg==="any")return al.map(p=>({id:p.id,name:p.name+(p.id===V.me?" (вы)":"")}));
@@ -412,6 +499,7 @@ function tgOpts(ab){
 function spForm(ab){
   let h='<div class="row">';
   if(ab.need==="key")h+='<select data-ui="key">'+KEYS.map(k=>'<option value="'+k+'"'+(UI.key===k?' selected':'')+'>'+esc(TR[k])+'</option>').join("")+'</select>';
+  if(ab.item)h+='<input data-ui="item" maxlength="60" placeholder="Название предмета" value="'+esc(UI.item)+'">';
   if(ab.tg!=="self"){
     const o=tgOpts(ab),sel=o.some(x=>x.id===UI.target)?UI.target:(o[0]&&o[0].id);
     h+='<select data-ui="target">'+o.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===sel?' selected':'')+'>'+esc(x.name)+'</option>').join("")+'</select>';
@@ -437,8 +525,20 @@ function spGo(){
   const o=tgOpts(ab),target=ab.tg==="self"?V.me:(o.some(z=>z.id===UI.target)?UI.target:(o[0]&&o[0].id));
   if(ab.tg!=="self"&&!target){msg("Нет подходящей цели");return}
   msg("");
-  send(ab.pend?"spprep":"spuse",{slot:UI.slot,key:UI.key,target});
+  const arg={slot:UI.slot,key:UI.key,target};
+  if(ab.item){const it=String(UI.item||"").trim();if(!it){msg("Введите название предмета");return}arg.item=it}
+  send(ab.pend?"spprep":"spuse",arg);
   UI.slot=-1}
+function admHtml(){
+  const pl=V.players.filter(p=>p.st==="in"||p.st==="out");
+  if(!pl.length)return"";
+  const sel=pl.some(p=>p.id===ADM.t)?ADM.t:pl[0].id;
+  return'<details id="adm"'+(ADM.open?' open':'')+'><summary><b>Админ-панель ведущего</b></summary><div class="card"><div class="mu">Изменить характеристику игрока. Пустое поле: случайная замена.</div>'+
+    (V.note?'<div style="color:var(--bad);margin:6px 0">'+esc(V.note)+'</div>':'')+
+    '<div class="row"><select data-adm="t">'+pl.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===sel?' selected':'')+'>'+esc(p.name)+'</option>').join("")+'</select>'+
+    '<select data-adm="k">'+KEYS.map(k=>'<option value="'+k+'"'+(ADM.k===k?' selected':'')+'>'+esc(TR[k])+'</option>').join("")+'</select></div>'+
+    '<div class="row"><input data-adm="v" maxlength="120" placeholder="Своё значение (пусто: случайное)" value="'+esc(ADM.v)+'"></div>'+
+    '<div class="row"><button type="button" data-act="admgo">Применить</button></div></div></details>'}
 function rows(p){
   if(!p.vals)return '<p class="mu">Карточка не выдана</p>';
   const full=p.st==="out"||V.phase==="over";
@@ -456,8 +556,10 @@ function bunkerHtml(b){
   if(!b||typeof b!=="object")return "";
   return '<div class="card"><b>Бункер: '+esc(b.name)+'</b>'+Object.keys(L).map(k=>'<div class="tr"><span class="k">'+L[k]+'</span><span class="v">'+esc(b[k])+'</span></div>').join("")+'</div>';
 }
-function render(){
+function render(force){
   const m=$("#main");
+  const ae=document.activeElement;
+  if(!force&&ae&&ae.tagName==="INPUT"&&m.contains(ae)){deferred=true;return}
   $("#start").hidden=!!peer;
   if(!V){m.innerHTML=peer?'<p class="mu">Подключаюсь…</p>':"";return}
   const host=V.me==="host",ph=V.phase,me=V.players.find(p=>p.id===V.me);
@@ -466,7 +568,7 @@ function render(){
     m.innerHTML='<h2>Лобби</h2>'+
       '<div class="card"><div class="mu">Код комнаты</div><div class="code">'+esc(V.code)+'</div>'+
       (host?'<div class="mu" style="margin-top:6px">Ссылка для друзей:</div><div class="link">'+esc(link)+'</div>':'')+'</div>'+
-      '<div class="card"><b>Игроки ('+V.players.length+')</b><ul>'+V.players.map(p=>'<li>'+esc(p.name)+(p.id==="host"?' — ведущий':'')+(p.id===V.me?' (вы)':'')+'</li>').join("")+'</ul></div>'+
+      '<div class="card"><b>Игроки ('+V.players.length+')</b><ul>'+V.players.map(p=>'<li>'+esc(p.name)+(p.id==="host"?' — ведущий':'')+(p.id===V.me?' (вы)':'')+(host&&p.id!=="host"?' <button class="sm alt" type="button" data-act="kick" data-id="'+esc(p.id)+'">Выгнать</button>':'')+'</li>').join("")+'</ul></div>'+
       (host?'<button type="button" data-act="start">Начать игру</button><p class="mu">Не закрывайте эту вкладку и не давайте экрану гаснуть: комната живёт, пока она открыта у ведущего.</p>':'<p class="mu">Ждём, пока ведущий начнёт игру.</p>');
     return;
   }
@@ -484,6 +586,7 @@ function render(){
     if(ph==="over")h+='<button type="button" data-act="again">Новая игра</button>';
     h+='<button class="alt" type="button" data-act="restart">Начать заново (новые карточки)</button>';
     h+='</div>';
+    h+=admHtml();
   }
   h+=spHtml();
   h+='<h2>Игроки</h2>';
@@ -501,15 +604,27 @@ $("#main").addEventListener("click",e=>{
   const b=e.target.closest("button[data-act]");
   if(!b)return;
   const ac=b.dataset.act;
-  if(ac==="spopen"){UI={slot:+b.dataset.id,key:"prof",target:""};render();return}
+  if(ac==="spopen"){UI={slot:+b.dataset.id,key:"prof",target:"",cat:"pack",item:""};render();return}
   if(ac==="spclose"){UI.slot=-1;render();return}
   if(ac==="spgo"){spGo();return}
   if(ac==="pick"){send("sppick",+b.dataset.id);return}
   if(ac==="pcancel"){send("spcancel");return}
+  if(ac==="admgo"){
+    const pl=V.players.filter(p=>p.st==="in"||p.st==="out"),t=pl.some(p=>p.id===ADM.t)?ADM.t:(pl[0]&&pl[0].id);
+    if(!t)return;
+    send("adm",{target:t,key:ADM.k,val:ADM.v});ADM.v="";return}
+  if(ac==="kick"&&!confirm("Выгнать игрока из комнаты?"))return;
   if(b.dataset.act==="restart"&&!confirm("Начать заново? Все получат новые карточки, бункер и катастрофу."))return;
   send(b.dataset.act,b.dataset.id);
 });
-$("#main").addEventListener("change",e=>{const u=e.target.dataset&&e.target.dataset.ui;if(u)UI[u]=e.target.value});
+$("#main").addEventListener("change",e=>{
+  const d=e.target.dataset||{};
+  if(d.ui){UI[d.ui]=e.target.value;if(d.ui==="cat"){UI.item="";render(true)}}
+  if(d.adm)ADM[d.adm]=e.target.value;
+});
+$("#main").addEventListener("input",e=>{const d=e.target.dataset||{};if(d.adm)ADM[d.adm]=e.target.value;if(d.ui)UI[d.ui]=e.target.value});
+$("#main").addEventListener("focusout",()=>{if(deferred){deferred=false;setTimeout(render,400)}});
+$("#main").addEventListener("toggle",e=>{if(e.target.id==="adm")ADM.open=e.target.open},true);
 function nameVal(){
   const n=$("#nm").value.trim();
   if(!n){msg("Введите имя");return null}
